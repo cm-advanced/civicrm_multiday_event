@@ -1,0 +1,22 @@
+configure = "admin/config/civicrm/civicrm-multiday-event"
+core = "7.x"
+dependencies[] = "civicrm"
+dependencies[] = "ctools"
+dependencies[] = "date"
+dependencies[] = "date_popup"
+dependencies[] = "field_collection"
+dependencies[] = "fullcalendar"
+dependencies[] = "list"
+dependencies[] = "number"
+dependencies[] = "views"
+description = "Creates Date based nodes in Drupal mirrored to CiviCRM"
+name = "CMA CiviCRM Multiday Event"
+package = "Community Media Advanced"
+php = "5.2.4"
+project = "civicrm_multiday_event"
+project_status_url = https://github.com/cm-advanced/civicrm_multiday_event
+version = "7.x-2.0
+core = "7.x"
+project = "civicrm_multiday_event"
+
+
