@@ -282,31 +282,17 @@ function civicrm_multiday_event_form_alter(&$form, &$form_state, $form_id) {
     $templates = array();
     $templates['_none'] = '- None -';
 
-    // Use API call in versions > 4.2
-    // http://issues.civicrm.org/jira/browse/CRM-10540
-   // $version = CRM_Utils_VersionCheck::singleton()->localVersion;
-  
-   $version = "4.7.12";
-    if ($version < "4.4") {
-      $result = db_query('SELECT id, template_title FROM {civicrm_event} WHERE is_template = 1 ORDER BY template_title');
+    $result = civicrm_api3('Event', 'get', array(
+      'sequential' => 1,
+      'is_template' => 1,
+      'options' => array(
+        'limit' => 0,
+        'sort' => 'template_title',
+      ),
+    ));
 
-      foreach ($result as $record) {
-        $templates[$record->id] = $record->template_title;
-      }
-    } else {
-			$params = array(
-				'version' => 3,
-				 'sequential' => 1,
-				 'is_template' => 1,
-				 'option.limit' => 9999,
-				 'options' => array(
-				 'sort' => 'template_title'),
-			);
-      $result = civicrm_api('Event', 'get', $params);
-
-      foreach ($result['values'] as $key => $record) {
-        $templates[$record['id']] = $record['template_title'];
-      }
+    foreach ($result['values'] as $record) {
+      $templates[$record['id']] = $record['template_title'];
     }
 
     $form['field_civievent_template'][LANGUAGE_NONE]['#options'] = $templates;
@@ -672,44 +658,21 @@ function civicrm_multiday_event_template_lookup($id) {
  * Lookup CiviCRM Event by ID.
  */
 function civicrm_multiday_event_lookup($id, $is_template = NULL) {
-  // API DOES NOT RETURN TEMPLATES in 4.1 W/O http://issues.civicrm.org/jira/browse/CRM-10540
-  // We attempt to load template using the API, if that doesn't work we use a custom
-  // function, but that doesn't not return everything the API does
-
   if (!civicrm_initialize()) {
     drupal_set_message(t('Failed to initialize CiviCRM'));
     return;
   }
 
-  $params = array();
+  $result = civicrm_api3("Event", "get", array(
+    'sequential' => 1,
+    'id' => $id,
+    'is_template' => $is_template,
+  ));
 
-  $params['version'] = 3;
-  $params['sequential'] = 1;
-  $params['id'] = $id;
-  $params['is_template'] = $is_template;
-  $result = civicrm_api("Event", "get", $params);
+  $event = $result['values'][0];
+  $event['price_set_id'] = CRM_Price_BAO_PriceSet::getFor('civicrm_event', $id);
 
-  if ($result['is_error'] || !$result['count']) {
-    // this will load templates if is_template doesn't work
-    $params = db_query('SELECT * FROM {civicrm_event} WHERE id = :id', array(':id' => $id))->fetchAssoc();
-  } else {
-    $params = $result['values'][0];
-  }
-
-//  $version = CRM_Utils_VersionCheck::singleton()->localVersion;
-  $version = "4.7.11";
-  if ($version < "4.4") {
-    // priceset_id is not returned by the API nor will the API added it, so we are manually
-    // inserting the priceset after the event. Need to get this fixed in 4.2
-
-    require_once 'CRM/Price/BAO/Set.php';
-    $params['price_set_id'] = CRM_Price_BAO_Set::getFor( 'civicrm_event', $id );
-  } else {
-    require_once 'CRM/Price/BAO/PriceSet.php';
-    $params['price_set_id'] = CRM_Price_BAO_PriceSet::getFor( 'civicrm_event', $id );
-  }
-
-  return $params;
+  return $event;
 }
 
 function civicrm_multiday_event_get_timezone_offset($remote_tz, $origin_tz = null) {
