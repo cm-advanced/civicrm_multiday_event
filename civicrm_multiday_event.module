@@ -279,33 +279,30 @@ function civicrm_multiday_event_form_alter(&$form, &$form_state, $form_id) {
     $form['field_date_of_first_session']['#type'] = 'hidden';
     $form['field_date_of_first_session'][LANGUAGE_NONE][0]['#type'] = 'hidden';
 
+    //NEED TO SET VALUE FOR HIDDEN FIELD EVEN THOUGH IT GETS SET IN PRESAVE
+    //WITHOUT THIS IT THROWS AN ERROR WITH PHP 7.1
+    $form['field_date_of_first_session'][LANGUAGE_NONE][0]['#value'] =
+    '01/01/1969';
+
     $templates = array();
     $templates['_none'] = '- None -';
 
     // Use API call in versions > 4.2
     // http://issues.civicrm.org/jira/browse/CRM-10540
    // $version = CRM_Utils_VersionCheck::singleton()->localVersion;
+
+    $result = civicrm_api3('Event', 'get', array(
+      'sequential' => 1,
+      'is_template' => 1,
+      'options' => array(
+        'limit' => 0,
+        'sort' => 'template_title',
+      ),
+    ));
+    
+    foreach ($result['values'] as $record) {
+      $templates[$record['id']] = $record['template_title'];
   
-   $version = "4.7.12";
-    if ($version < "4.4") {
-      $result = db_query('SELECT id, template_title FROM {civicrm_event} WHERE is_template = 1 ORDER BY template_title');
-
-      foreach ($result as $record) {
-        $templates[$record->id] = $record->template_title;
-      }
-    } else {
-			$params = array(
-				'version' => 3,
-				 'sequential' => 1,
-				 'is_template' => 1,
-				 'option.limit' => 9999,
-				 'options' => array(
-				 'sort' => 'template_title'),
-			);
-      $result = civicrm_api('Event', 'get', $params);
-
-      foreach ($result['values'] as $key => $record) {
-        $templates[$record['id']] = $record['template_title'];
       }
     }
 
@@ -440,7 +437,8 @@ function civicrm_multiday_event_node_presave($node) {
     //FALL BACK TO PREVIOUS TITLE, THEREFORE WE CACHE IT SO WE CAN ACTUALLY
     //SET A CUSTOM TITLE WHEN WE NEED TO
     global $civicrm_multiday_event_cached_title;
-    if (!isset($civicrm_multiday_event_cached_title)) {
+    if (!isset($civicrm_multiday_event_cached_title) ||
+	!$civicrm_multiday_event_cached_title) {
       $civicrm_multiday_event_cached_title = $node->title;
     }
     else {
@@ -480,7 +478,7 @@ function civicrm_multiday_event_node_presave($node) {
     }
 
     $params['is_public'] = ($node->status) ? 1 : 0;
-
+    $params['template_id'] = $event_id;
     if (civicrm_initialize()) {
       $params['version'] = 3;
       //we never want new events to be templates
@@ -527,6 +525,12 @@ function civicrm_multiday_event_node_presave($node) {
             'price_set_id ' => $params['price_set_id'],
           ))->execute();
         }
+        if ($result['id'] != $event_id) {
+          $fixed_reminders = db_update('civicrm_action_schedule')
+            ->fields(array('mapping_id' => '3'))
+            ->condition('civicrm_action_schedule.entity_value', $result['id'], '=')
+            ->execute();
+	}    
       }
     }
 
@@ -681,35 +685,15 @@ function civicrm_multiday_event_lookup($id, $is_template = NULL) {
     return;
   }
 
-  $params = array();
-
-  $params['version'] = 3;
-  $params['sequential'] = 1;
-  $params['id'] = $id;
-  $params['is_template'] = $is_template;
-  $result = civicrm_api("Event", "get", $params);
-
-  if ($result['is_error'] || !$result['count']) {
-    // this will load templates if is_template doesn't work
-    $params = db_query('SELECT * FROM {civicrm_event} WHERE id = :id', array(':id' => $id))->fetchAssoc();
-  } else {
-    $params = $result['values'][0];
-  }
-
-//  $version = CRM_Utils_VersionCheck::singleton()->localVersion;
-  $version = "4.7.11";
-  if ($version < "4.4") {
-    // priceset_id is not returned by the API nor will the API added it, so we are manually
-    // inserting the priceset after the event. Need to get this fixed in 4.2
-
-    require_once 'CRM/Price/BAO/Set.php';
-    $params['price_set_id'] = CRM_Price_BAO_Set::getFor( 'civicrm_event', $id );
-  } else {
-    require_once 'CRM/Price/BAO/PriceSet.php';
-    $params['price_set_id'] = CRM_Price_BAO_PriceSet::getFor( 'civicrm_event', $id );
-  }
-
-  return $params;
+  $result = civicrm_api3("Event", "get", array(
+    'sequential' => 1,
+    'id' => $id,
+    'is_template' => $is_template,
+  ));
+  
+  $event = $result['values'][0];
+  $event['price_set_id'] = CRM_Price_BAO_PriceSet::getFor('civicrm_event', $id);
+  return $event;
 }
 
 function civicrm_multiday_event_get_timezone_offset($remote_tz, $origin_tz = null) {
